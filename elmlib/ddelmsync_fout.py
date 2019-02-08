@@ -2,9 +2,10 @@ import dd
 import numpy as np
 from getsig import getsig
 
-def ddelmsync(shotnr, diag, signal, edition=0,
-              ti=0.0, tf=10.0, preft=0.001, suft=0.004,
-              elm_exper="AUGD", elm_edition=0):
+def ddelmsync_fout(shotnr, diag, signal, edition=0,
+                   ti=0.0, tf=10.0, preft=0.001, suft=0.004,
+                   felm_min=0, felm_max=1000,
+                   elm_exper="AUGD", elm_edition=0):
     """Gets a selected 1-D signal and syncs it to the ELMs in the desired time interval
     
     Parameters
@@ -34,6 +35,7 @@ def ddelmsync(shotnr, diag, signal, edition=0,
     ###### Gets ELM data ############
     ELM = dd.shotfile("ELM", shotnr, experiment=elm_exper, edition=elm_edition)
     elmd = ELM("t_endELM", tBegin=ti, tEnd=tf)
+    freq_ELM = ELM("f_ELM", tBegin=ti, tEnd=tf)
     t_endELM = elmd.data
     t_begELM = elmd.time
     ELM.close()
@@ -51,27 +53,31 @@ def ddelmsync(shotnr, diag, signal, edition=0,
     synctime = []#np.zeros_like(signal.time)
         
     for elm in range(t_begELM.size):
-        t1, t2 =t_begELM[elm]-preft, t_endELM[elm]+suft
-        #Re-adjust ELM times so no overlap between consecutive ELMs occurs
-        if (elm >=1 ) :
-            tendprev = t_endELM[elm-1]                
-            t1 = np.max([t1,tendprev])
-        if  (elm<t_begELM.size-1):
-            tstartnext =  t_begELM[elm+1]
-            t2 = np.min([t2,tstartnext])
+        #Only accept ELMs at the chosen frequency window
+        if (freq_ELM.data[elm]>=felm_min)&(freq_ELM.data[elm]<=felm_max):
+            t1, t2 =t_begELM[elm]-preft, t_endELM[elm]+suft
+            #Re-adjust ELM times so no overlap between consecutive ELMs occurs
+            if (elm >=1 ) :
+                tendprev = t_endELM[elm-1]                
+                t1 = np.max([t1,tendprev])
+            if  (elm<t_begELM.size-1):
+                tstartnext =  t_begELM[elm+1]
+                t2 = np.min([t2,tstartnext])
 
-        elmind = np.where((signal.time >= t1) & (signal.time <=t2))
+            elmind = np.where((signal.time >= t1) & (signal.time <=t2))
         
-        synctime.append(signal.time[elmind]-t_begELM[elm])
+            synctime.append(signal.time[elmind]-t_begELM[elm])
         
-        #Distinguish between 1D (signal) and 2D array (Signal group)
-        if len(signal.data.shape)==1:
-            syncsig.append(signal.data[elmind])
-        elif len(signal.data.shape)==2:
-            syncsig.append(signal.data[elmind,:])
-        else:
-            raise Exception('Array format not supported!')
-        
+            #Distinguish between 1D (signal) and 2D array (Signal group)
+            if len(signal.data.shape)==1:
+                syncsig.append(signal.data[elmind])
+            elif len(signal.data.shape)==2:
+                syncsig.append(signal.data[elmind,:])
+            else:
+                raise Exception('Array format not supported!')
+        else:#Space left open for possible analysis
+            a=0
+            
     #Finally, return is again dependent on array dimensions
     if len(signal.data.shape)==1:
         synctime_return = np.concatenate(synctime)
